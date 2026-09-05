@@ -26,7 +26,9 @@ struct WindowState {
     bool pushHumanoid = false;
     bool punch = false;
     bool opponentPunch = false;
+    std::array<bool,2> kick{};
     std::array<bool, 2> guardHeld{};
+    std::array<bool,4> moveHeld{};
 };
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -38,8 +40,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     if (state && message == WM_KEYUP) {
         if (wParam == 'G') state->guardHeld[0] = false;
         if (wParam == 'O') state->guardHeld[1] = false;
+        if (wParam == 'A') state->moveHeld[0] = false;
+        if (wParam == 'D') state->moveHeld[1] = false;
+        if (wParam == VK_LEFT) state->moveHeld[2] = false;
+        if (wParam == VK_RIGHT) state->moveHeld[3] = false;
     }
-    if (state && message == WM_KILLFOCUS) state->guardHeld = {};
+    if (state && message == WM_KILLFOCUS) { state->guardHeld = {}; state->moveHeld = {}; }
     if (ImGui::GetCurrentContext() && ImGui_ImplWin32_WndProcHandler(window, message, wParam, lParam)) return 1;
     switch (message) {
     case WM_SIZE:
@@ -65,8 +71,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
             if (wParam == 'H') state->pushHumanoid = true;
             if (wParam == 'P') state->punch = true;
             if (wParam == 'K') state->opponentPunch = true;
+            if (wParam == 'F') state->kick[0] = true;
+            if (wParam == 'L') state->kick[1] = true;
             if (wParam == 'G') state->guardHeld[0] = true;
             if (wParam == 'O') state->guardHeld[1] = true;
+            if (wParam == 'A') state->moveHeld[0] = true;
+            if (wParam == 'D') state->moveHeld[1] = true;
+            if (wParam == VK_LEFT) state->moveHeld[2] = true;
+            if (wParam == VK_RIGHT) state->moveHeld[3] = true;
             if (wParam == VK_ESCAPE) PostMessageW(window, WM_CLOSE, 0, 0);
         }
         return 0;
@@ -101,7 +113,7 @@ struct Window {
     void Create(WindowState& state) {
         RECT rect{0, 0, 1280, 800};
         if (!AdjustWindowRectEx(&rect, WS_OVERLAPPEDWINDOW, FALSE, 0)) throw std::runtime_error("AdjustWindowRectEx failed.");
-        handle = CreateWindowExW(0, ClassName, L"Polygon Fighter | Phase 6 - Blender Characters",
+        handle = CreateWindowExW(0, ClassName, L"Polygon Fighter | Phase 7 - Kick",
             WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top,
             nullptr, nullptr, instance, &state);
         if (!handle) throw std::runtime_error("Could not create application window.");
@@ -131,7 +143,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     bool smoke = false;
     std::filesystem::path outputDirectory;
     try {
-        smoke = HasArgument(L"--smoke-test");
+        const bool kickSmoke=HasArgument(L"--smoke-kick");
+        const bool movementSmoke=HasArgument(L"--smoke-movement");
+        smoke = HasArgument(L"--smoke-test") || movementSmoke || kickSmoke;
         const bool warp = HasArgument(L"--warp");
         outputDirectory = ExecutableDirectory();
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -156,6 +170,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
         unsigned resizeCount = 0;
         bool smokePunchStarted = false, smokePunchCaptured = false;
         bool smokeAnticipationCaptured = false, smokeRecoilCaptured = false;
+        bool movementCaptured=false, rangeCaptured=false;
+        std::uint64_t movementSteps=0;
         bool running = true;
         while (running) {
             MSG message{};
@@ -186,15 +202,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
             if (windowState.pushHumanoid) { physics.PushHumanoid(); windowState.pushHumanoid = false; }
             if (windowState.punch) { physics.RequestPunch(); windowState.punch = false; }
             if (windowState.opponentPunch) { physics.RequestPunch(1); windowState.opponentPunch = false; }
-            if (smoke && !smokePunchStarted && debug.steps >= 60) {
-                physics.RequestPunch();
+            for (std::size_t i=0;i<2;++i) if (windowState.kick[i]) {
+                physics.RequestAttack(i,pf::AttackKind::Kick); windowState.kick[i]=false;
+            }
+            if (smoke && !movementSmoke && !smokePunchStarted && debug.steps >= 60) {
+                physics.RequestAttack(0,kickSmoke ? pf::AttackKind::Kick : pf::AttackKind::Punch);
                 smokePunchStarted = true;
             }
 
             renderer.NewFrame();
             pf::DrawDebugUI(physics, debug, renderer.AdapterName().c_str(), renderer.DebugLayerEnabled());
             if (physics.IsCombatScene())
-                for (std::size_t i = 0; i < 2; ++i) physics.SetGuard(i, windowState.guardHeld[i] || debug.guard[i]);
+                for (std::size_t i = 0; i < 2; ++i) {
+                    physics.SetGuard(i, windowState.guardHeld[i] || debug.guard[i]);
+                    const bool captured=ImGui::GetIO().WantCaptureKeyboard;
+                    physics.SetMove(i,captured ? 0.f : static_cast<float>(windowState.moveHeld[i*2+1])-static_cast<float>(windowState.moveHeld[i*2]));
+                }
             if (debug.reset) {
                 physics.ResetBox();
                 physics.ResetHumanoid();
@@ -202,14 +225,26 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
                 debug.steps = 0;
                 debug.reset = false;
             } else {
-                debug.steps += clock.Advance(elapsed, debug.paused, debug.singleStep, [&] { physics.Step(); });
+                debug.steps += clock.Advance(elapsed, debug.paused, debug.singleStep, [&] {
+                    if (movementSmoke) {
+                        physics.SetMove(0,movementSteps<90 ? -1.f : movementSteps>=240 && movementSteps<360 ? 1.f : 0.f);
+                        if (movementSteps==120 || movementSteps==480) physics.RequestPunch();
+                        if (movementSteps==240 && physics.Combat().Fighter(1).hp!=100)
+                            throw std::runtime_error("Retreat smoke punch must miss.");
+                        ++movementSteps;
+                    }
+                    physics.Step();
+                });
             }
             debug.singleStep = false;
             ImGui::Render();
-            const bool finished = smoke && frames >= 120 && debug.steps >= 240;
-            const bool capturePunch = smoke && !smokePunchCaptured && physics.Punching() && physics.AnimationTime() >= .4;
-            const bool captureAnticipation = smoke && !smokeAnticipationCaptured && physics.Punching() && physics.AnimationTime() >= .20;
-            const bool captureRecoil = smoke && !smokeRecoilCaptured && physics.Punching() && physics.AnimationTime() >= .65;
+            const bool finished = smoke && frames >= 120 && debug.steps >= (movementSmoke ? 660u : 240u);
+            const bool captureAttack=smoke && (!movementSmoke || movementSteps>480);
+            const bool capturePunch = captureAttack && !smokePunchCaptured && physics.Attacking() && physics.AnimationTime() >= (kickSmoke ? .55 : .4);
+            const bool captureAnticipation = captureAttack && !smokeAnticipationCaptured && physics.Attacking() && physics.AnimationTime() >= (kickSmoke ? .32 : .20);
+            const bool captureRecoil = captureAttack && !smokeRecoilCaptured && physics.Attacking() && physics.AnimationTime() >= (kickSmoke ? .78 : .65);
+            const bool captureMovement=movementSmoke && !movementCaptured && movementSteps>=45;
+            const bool captureRange=movementSmoke && !rangeCaptured && movementSteps>=180;
             pf::RenderScene scene;
             scene.box = physics.BoxPose();
             scene.reactions = physics.HitReactions();
@@ -217,14 +252,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
             for (std::size_t i = 0; i < scene.fighterCount; ++i) {
                 scene.bodies[i] = physics.HumanoidPoses(i);
                 scene.targets[i] = physics.TargetPoses(i);
+                scene.attacks[i] = physics.Combat().Fighter(i).attack;
                 scene.hitboxActive[i] = physics.IsCombatScene() && physics.LastCombatFrame().active[i];
             }
             renderer.Draw(scene, debug.view,
-                captureAnticipation ? outputDirectory / "smoke-anticipation.bmp"
-                : capturePunch ? outputDirectory / "smoke-punch.bmp"
-                : captureRecoil ? outputDirectory / "smoke-recoil.bmp"
+                captureMovement ? outputDirectory / "smoke-movement.bmp"
+                : captureRange ? outputDirectory / "smoke-range.bmp"
+                : captureAnticipation ? outputDirectory / (kickSmoke ? "smoke-kick-anticipation.bmp" : "smoke-anticipation.bmp")
+                : capturePunch ? outputDirectory / (kickSmoke ? "smoke-kick-impact.bmp" : "smoke-punch.bmp")
+                : captureRecoil ? outputDirectory / (kickSmoke ? "smoke-kick-recoil.bmp" : "smoke-recoil.bmp")
                 : finished ? outputDirectory / "smoke.bmp" : std::filesystem::path{});
             if (captureAnticipation) smokeAnticipationCaptured = true;
+            if (captureMovement) movementCaptured=true;
+            if (captureRange) rangeCaptured=true;
             if (capturePunch) smokePunchCaptured = true;
             if (captureRecoil) smokeRecoilCaptured = true;
             ++frames;
@@ -243,16 +283,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
                     << "\nphysics_steps=" << debug.steps << "\nbox_y=" << height
                     << "\nhumanoid_head_y=" << physics.HumanoidPoses()[2].position[1]
                     << "\nhumanoid_joint_error_deg=" << physics.HumanoidPoseError()
-                    << "\npunch_captured=" << smokePunchCaptured << "\nreturned_to_idle=" << !physics.Punching()
+                    << "\npunch_captured=" << smokePunchCaptured << "\nreturned_to_idle=" << !physics.Attacking()
                     << "\np2_hp=" << physics.Combat().Fighter(1).hp
                     << "\nblender_models=" << debug.view.models
                     << "\nanticipation_captured=" << smokeAnticipationCaptured
                     << "\nrecoil_captured=" << smokeRecoilCaptured
+                    << "\nkick_smoke=" << kickSmoke
+                    << "\nmovement_smoke=" << movementSmoke << "\nmovement_captured=" << movementCaptured
+                    << "\nfighter_distance=" << physics.FighterDistance()
                     << "\nmale_triangles=" << characters[0]->indices.size()/3
                     << "\nfemale_triangles=" << characters[1]->indices.size()/3
                     << "\nresizes=" << resizeCount << "\nvalidation_warnings_or_errors=" << errors << '\n';
-                if (errors || (physics.IsCombatScene() && physics.Combat().Fighter(1).hp != 88)
-                    || !smokePunchCaptured || physics.Punching() || std::abs(height - 0.5f) > 0.05f || resizeCount < 2
+                if (errors || (physics.IsCombatScene() && physics.Combat().Fighter(1).hp != (kickSmoke ? 82 : 88))
+                    || !smokePunchCaptured || physics.Attacking() || std::abs(height - 0.5f) > 0.05f || resizeCount < 2
                     || physics.HumanoidPoses()[2].position[1] < 1.7f || physics.HumanoidPoseError() > 5.0f)
                     throw std::runtime_error("Smoke validation failed; see smoke.log.");
                 return 0;

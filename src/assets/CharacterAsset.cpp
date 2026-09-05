@@ -60,7 +60,7 @@ XMVECTOR Sample(const cgltf_animation_sampler& sampler, float time, std::size_t 
 }
 void LoadClip(cgltf_data& data, const cgltf_animation& animation, AnimationClip& clip,
               const std::array<cgltf_node*,HumanoidPartCount>& bones) {
-    const float duration = std::strcmp(clip.name,"Idle")==0 ? 2.f : 1.f;
+    const float duration = std::strcmp(clip.name,"Idle")==0 ? 2.f : std::strcmp(clip.name,"Walk")==0 ? .8f : std::strcmp(clip.name,"Kick")==0 ? 1.3f : 1.f;
     float last=0;
     for (std::size_t channel=0;channel<animation.channels_count;++channel) {
         const auto* sampler=animation.channels[channel].sampler;
@@ -128,8 +128,8 @@ std::shared_ptr<const CharacterAsset> CharacterAsset::Load(const std::filesystem
     Require(cgltf_load_buffers(&options,raw,path.string().c_str())==cgltf_result_success
         && cgltf_validate(raw)==cgltf_result_success,"Invalid character buffers.");
     Require(raw->skins_count==1 && raw->skins[0].joints_count==HumanoidPartCount
-        && raw->nodes_count<=64 && raw->meshes_count==1 && raw->animations_count==3,
-        "Character must contain one mesh, 11 joints and Idle / Punch / Guard clips.");
+        && raw->nodes_count<=64 && raw->meshes_count==1 && raw->animations_count==5,
+        "Character must contain one mesh, 11 joints and Idle / Punch / Guard / Walk / Kick clips.");
     auto asset=std::make_shared<CharacterAsset>();
     std::array<cgltf_node*,HumanoidPartCount> bones{};
     const auto& skin=raw->skins[0];
@@ -205,7 +205,9 @@ std::shared_ptr<const CharacterAsset> CharacterAsset::Load(const std::filesystem
         Require(animation.name,"Unnamed animation.");
         auto* clip=std::strcmp(animation.name,"Idle")==0 ? &animations->idle
             : std::strcmp(animation.name,"Punch")==0 ? &animations->punch
-            : std::strcmp(animation.name,"Guard")==0 ? &animations->guard : nullptr;
+            : std::strcmp(animation.name,"Guard")==0 ? &animations->guard
+            : std::strcmp(animation.name,"Walk")==0 ? &animations->walk
+            : std::strcmp(animation.name,"Kick")==0 ? &animations->kick : nullptr;
         Require(clip && clip->keys.empty(),"Unknown or duplicate animation.");
         LoadClip(*raw,animation,*clip,bones);
     }

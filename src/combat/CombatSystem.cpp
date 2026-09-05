@@ -19,19 +19,21 @@ const char* StateName(CombatState state) {
     }
     return "Unknown";
 }
-bool CombatSystem::RequestPunch(std::size_t fighter) {
+bool CombatSystem::RequestAttack(std::size_t fighter, AttackKind kind) {
     auto& state = fighters_.at(fighter);
     if (state.State() != CombatState::Idle) return false;
     state.attackFrame = 0;
     state.connected = false;
+    state.attack = kind;
     return true;
 }
 void CombatSystem::SetGuard(std::size_t fighter, bool held) { fighters_.at(fighter).guardRequested = held; }
 void CombatSystem::Reset() { fighters_ = {}; }
 bool CombatSystem::HitboxActive(std::size_t fighter) const {
     const auto& state = fighters_.at(fighter);
-    return state.State() == CombatState::Attacking && state.attackFrame >= Punch.startupFrames
-        && state.attackFrame < Punch.startupFrames + Punch.activeFrames;
+    const auto& data = Data(state.attack);
+    return state.State() == CombatState::Attacking && state.attackFrame >= data.startupFrames
+        && state.attackFrame < data.startupFrames + data.activeFrames;
 }
 bool CombatSystem::Intersects(const Sphere& a, const Sphere& b) {
     float distanceSquared = 0;
@@ -40,15 +42,19 @@ bool CombatSystem::Intersects(const Sphere& a, const Sphere& b) {
     return distanceSquared <= radius * radius;
 }
 Sphere CombatSystem::PunchSphere(const std::array<BodyPose, HumanoidPartCount>& pose) {
-    const auto& forearm = pose[6];
-    const auto& q = forearm.rotation;
-    // Quaternionで前腕ローカルの-Y端点を回転する。物理エンジンには依存しない。
-    const float length = HumanoidParts[6].halfExtent[1];
+    return AttackSphere(pose,AttackKind::Punch);
+}
+Sphere CombatSystem::AttackSphere(const std::array<BodyPose, HumanoidPartCount>& pose, AttackKind kind) {
+    const std::size_t bone = kind == AttackKind::Kick ? 10 : 6;
+    const auto& part = pose[bone];
+    const auto& q = part.rotation;
+    // 前腕または下腿のローカル-Y端点を回転する。物理エンジンには依存しない。
+    const float length = HumanoidParts[bone].halfExtent[1];
     const std::array<float, 3> offset{
         -length * 2 * (q[0] * q[1] - q[2] * q[3]),
         -length * (1 - 2 * (q[0] * q[0] + q[2] * q[2])),
         -length * 2 * (q[1] * q[2] + q[0] * q[3])};
-    Sphere result{forearm.position, Punch.hitboxRadius};
+    Sphere result{part.position, Data(kind).hitboxRadius};
     for (std::size_t i = 0; i < 3; ++i) result.center[i] += offset[i];
     return result;
 }
@@ -65,13 +71,16 @@ CombatFrame CombatSystem::Step(const FighterPoses& poses) {
     for (std::size_t attacker = 0; attacker < fighters_.size(); ++attacker) {
         const std::size_t defender = 1 - attacker;
         if (!HitboxActive(attacker) || fighters_[attacker].connected || fighters_[defender].hp == 0) continue;
-        const auto hitbox = PunchSphere(poses[attacker]);
+        const auto kind = fighters_[attacker].attack;
+        const auto& data = Data(kind);
+        const auto hitbox = AttackSphere(poses[attacker],kind);
         const auto hurtboxes = HurtSpheres(poses[defender]);
         for (std::size_t bone = 0; bone < hurtboxes.size(); ++bone) {
             if (!Intersects(hitbox, hurtboxes[bone])) continue;
             const bool guard = fighters_[defender].State() == CombatState::Guarding;
-            frame.hits[frame.hitCount++] = {attacker, defender, bone, guard ? Punch.guardDamage : Punch.damage, guard};
+            frame.hits[frame.hitCount++] = {attacker, defender, bone, guard ? data.guardDamage : data.damage, guard};
             auto& hit = frame.hits[frame.hitCount - 1];
+            hit.attack = kind;
             // 水平の攻撃方向と、被攻撃球の拳側の表面を命中位置として記録する。
             float distance = 0, separation = 0;
             for (std::size_t axis = 0; axis < 3; ++axis) {
@@ -91,8 +100,9 @@ CombatFrame CombatSystem::Step(const FighterPoses& poses) {
         }
     }
     for (auto& state : fighters_) {
+        const auto& data = Data(state.attack);
         if (state.stunFrames > 0) --state.stunFrames;
-        if (state.attackFrame >= 0 && ++state.attackFrame >= Punch.startupFrames + Punch.activeFrames + Punch.recoveryFrames)
+        if (state.attackFrame >= 0 && ++state.attackFrame >= data.startupFrames + data.activeFrames + data.recoveryFrames)
             state.attackFrame = -1;
     }
     for (std::size_t i = 0; i < frame.hitCount; ++i) {
@@ -100,7 +110,8 @@ CombatFrame CombatSystem::Step(const FighterPoses& poses) {
         auto& target = fighters_[hit.defender];
         fighters_[hit.attacker].connected = true;
         target.hp = std::max(0, target.hp - hit.damage);
-        target.stunFrames = target.hp == 0 ? 0 : hit.guarded ? Punch.guardStun : Punch.hitstun;
+        const auto& data = Data(hit.attack);
+        target.stunFrames = target.hp == 0 ? 0 : hit.guarded ? data.guardStun : data.hitstun;
         target.attackFrame = -1;
     }
     return frame;

@@ -2,7 +2,7 @@
 
 DirectX 12とJolt Physicsで、アニメーションと物理を組み合わせる3D格闘ゲームのプロトタイプ。
 
-現在は **Phase 6のBlenderキャラクター組み込みまで完了**。男女のローポリモデルをglTFから読み込み、物理姿勢からGPU Skinningで描画する。パンチ・ガード・HP・硬直・KO・被弾時の揺れと復帰が動作する。
+現在は **Phase 7の前後移動・キックと技選択まで実装（0.8.0）**。男女のローポリモデルをglTFから読み込み、物理姿勢からGPU Skinningで描画する。歩行・パンチ・キック・ガード・HP・硬直・KO・被弾時の揺れと復帰が動作する。
 
 男性は白い道着と短髪、女性は赤い武術服とポニーテール。編集可能な[男性.blend](assets/characters/models/male-fighter.blend)・[女性.blend](assets/characters/models/female-fighter.blend)、ゲーム用GLB、プレビューを保存した。パンチは腕と上体の予備動作、打点での短い保持、反動からの収束を含む。制作・再出力手順は[Phase 6資料](docs/reference/phase-6-blender.md)を参照する。
 
@@ -35,7 +35,10 @@ $appPath = Join-Path $buildDir "$configuration/polygon_fighter.exe"
 | 箱を押し上げて回転させる（物理実験モード） | `I` / Impulse |
 | 人形の胴体を押す | `H` / Push torso |
 | P1（白）／P2（赤）がパンチする | `P` / `K` / 各Punchボタン |
+| P1／P2がキックする | `F` / `L` / 各Kickボタン |
 | P1／P2がガードする | `G` / `O`を押し続ける、または各Auto guard |
+| P1が後退／前進する | `A` / `D`を押し続ける |
+| P2が後退／前進する | 左矢印 / 右矢印を押し続ける |
 | 攻撃・被攻撃判定を表示する | Hitboxes / Hurtboxes |
 | 命中位置とインパルス方向を表示する | Impact point / impulse |
 | 被弾時の力とガード軽減を調整する | Hit impulse（0〜40 Ns）/ Guard impulse scale（0〜1倍） |
@@ -51,11 +54,13 @@ $appPath = Join-Path $buildDir "$configuration/polygon_fighter.exe"
 | 重力を変更する | Gravityスライダー |
 | 終了 | `Esc` / ウィンドウを閉じる |
 
-ImGuiがキーボード入力を使用している間はゲーム側のショートカットを抑止する。リセットは身体の位置・姿勢・速度を戻し、重力・関節設定・一時停止状態は維持する。モーターを弱めて胴体を押すと反応の違いを比較できる。骨盤の固定はモーターOFF時にも維持する。
+ImGuiがキーボード入力を使用している間はゲーム側のショートカットを抑止する。リセットは身体の位置・姿勢・速度を戻し、重力・関節設定・一時停止状態は維持する。モーターを弱めて胴体を押すと反応の違いを比較できる。骨盤の支持はモーターOFF時にも維持する。
 
-パンチ中の追加入力は無視する。一時停止中にパンチを指定した場合は、Stepまたは再開で進む。リセットはパンチを中断しIdleへ戻す。水色は実際の物理Skeleton、緑色は目標Skeletonで、目標の横移動は表示だけに適用する。
+攻撃中の追加入力は無視し、パンチとキックの途中切り替えはできない。一時停止中にパンチを指定した場合は、Stepまたは再開で進む。リセットは攻撃を中断しIdleへ戻す。水色は実際の物理Skeleton、緑色は目標Skeletonで、目標の横移動は表示だけに適用する。
 
-ガード・硬直・KO中もパンチを受け付けない。HPは100、通常命中は12ダメージ、ガード時は3ダメージ。攻撃判定は橙色、被攻撃判定は青色で表示する。移動・相手AI・ラウンド制は未実装。
+ガード・硬直・KO中も攻撃を受け付けない。HPは100。パンチは通常12・ガード時3ダメージ、キックは通常18・ガード時4ダメージ。キックは膝を畳む予備動作、蹴り出しと短い保持、脚を引き戻す反動を含む。攻撃判定は橙色、被攻撃判定は青色で表示する。相手AI・ラウンド制は未実装。
+
+移動キーは画面の左右ではなく相手への前後を指定する。攻撃・ガード・硬直・KO中は移動できない。最小間合いとステージ端で止まり、離れるとパンチが空振りする。骨盤を支持して動かす初期方式で、足滑りは残る。詳細は[移動と間合い](docs/reference/phase-7-movement.md)を参照する。
 
 被弾インパルスの初期値は20 Ns、ガード時は25%の5 Ns。命中位置と方向を通常は黄色、ガード時は青緑色で0.5秒間表示する。線の長さは1 Nsあたり0.025 mで、先端の小さな箱が力の向きを示す。0 Nsにすると追加インパルスだけを止め、身体同士の衝突反応と比較できる。試合リセットでも調整値を維持する。
 
@@ -74,7 +79,7 @@ $configuration = 'Debug'
 ctest --test-dir $buildDir -C $configuration --output-on-failure
 ```
 
-GLB・Skinning行列・読み込んだモーションでの戦闘、既存の物理・戦闘ルール、DX12起動を含む計7件のテストを実行する。スモークテストはGPUの使えるWindowsデスクトップセッションで実行する。実行ファイルの隣に `smoke.log`、`smoke.bmp`、予備動作の `smoke-anticipation.bmp`、打点の `smoke-punch.bmp`、反動の `smoke-recoil.bmp` が生成される。失敗時の詳細は `error.log` を確認する。
+GLB・Skinning行列・読み込んだモーションでの戦闘、移動と間合い、既存の物理・戦闘ルール、DX12起動を含む計11件のテストを実行する。スモークテストはGPUの使えるWindowsデスクトップセッションで実行する。実行ファイルの隣に `smoke.log`、`smoke.bmp`、予備動作の `smoke-anticipation.bmp`、打点の `smoke-punch.bmp`、反動の `smoke-recoil.bmp` が生成される。移動テストは `smoke-movement.bmp` と `smoke-range.bmp` も保存する。キックの3段階は `smoke-kick-anticipation.bmp`・`smoke-kick-impact.bmp`・`smoke-kick-recoil.bmp` に保存する。各スモークテストは共通のログと最終画像を上書きする。失敗時の詳細は `error.log` を確認する。
 
 ハードウェアGPUが利用できない場合はWARPへ自動的に切り替える。明示的な確認には次を使う。
 
@@ -95,6 +100,8 @@ $appPath = 'build/Debug/polygon_fighter.exe'
 - [Phase 4の戦闘判定](docs/reference/phase-4-combat.md)
 - [Phase 5の被弾反応と姿勢復帰](docs/reference/phase-5-hit-reaction.md)
 - [Phase 6のBlenderモデル・モーションと組み込み](docs/reference/phase-6-blender.md)
+- [Phase 7の前後移動と間合い](docs/reference/phase-7-movement.md)
+- [Phase 7のキックと技選択](docs/reference/phase-7-kick.md)
 - [キャラクター設定画](docs/reference/character-concepts.md)
 - [変更履歴](docs/changelog.md)
 

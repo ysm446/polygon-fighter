@@ -9,7 +9,9 @@
       "animations": [
         "Idle",
         "Punch",
-        "Guard"
+        "Guard",
+        "Walk",
+        "Kick"
       ]
     },
     {
@@ -20,7 +22,9 @@
       "animations": [
         "Idle",
         "Punch",
-        "Guard"
+        "Guard",
+        "Walk",
+        "Kick"
       ]
     }
   ]

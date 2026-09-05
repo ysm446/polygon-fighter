@@ -4,3 +4,4 @@
 /imgui.ini
 *.user
 /docs/references/
+__pycache__/

@@ -8,7 +8,7 @@ void DrawDebugUI(PhysicsWorld& physics, DebugState& state, const char* adapter, 
     ImGui::SetNextWindowSize(ImVec2(350, 690), ImGuiCond_FirstUseEver);
     ImGui::Begin("Polygon Fighter | Physics Lab", nullptr, ImGuiWindowFlags_NoCollapse);
     ImGui::PushItemWidth(170);
-    ImGui::Text(physics.IsCombatScene() ? "PHASE 06 / BLENDER CHARACTERS" : "PHYSICS / ANIMATION LAB");
+    ImGui::Text(physics.IsCombatScene() ? "PHASE 07 / KICK" : "PHYSICS / ANIMATION LAB");
     ImGui::Separator();
     ImGui::TextWrapped("GPU: %s", adapter);
     ImGui::Text("DX12 validation: %s", debugLayer ? "enabled" : "unavailable / release");
@@ -38,7 +38,7 @@ void DrawDebugUI(PhysicsWorld& physics, DebugState& state, const char* adapter, 
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Text("Humanoid / 11 bodies / 10 joints");
-    ImGui::TextDisabled("Pelvis anchored to world");
+    ImGui::TextDisabled(physics.IsCombatScene() ? "Pelvis supported / movable" : "Pelvis anchored to world");
     bool changed = ImGui::Checkbox("Joint motors", &state.joints.enabled);
     changed = ImGui::SliderFloat("Stiffness", &state.joints.stiffness, 0, 1500, "%.0f Nm/rad") || changed;
     changed = ImGui::SliderFloat("Damping", &state.joints.damping, 0, 100, "%.1f Nms/rad") || changed;
@@ -51,8 +51,8 @@ void DrawDebugUI(PhysicsWorld& physics, DebugState& state, const char* adapter, 
     ImGui::Text("Max joint error: %.2f deg", physics.HumanoidPoseError());
     ImGui::TextWrapped("Push the torso and compare recovery with different motor settings.");
     ImGui::Separator();
-    ImGui::Text("Animation: %s | %.2f s", physics.Punching() ? "Punch" : "Idle", physics.AnimationTime());
-    ImGui::BeginDisabled(physics.IsCombatScene() ? physics.Combat().Fighter(0).State() != CombatState::Idle : physics.Punching());
+    ImGui::Text("Animation: %s | %.2f s", physics.Attacking() ? AttackName(physics.CurrentAttack()) : "Idle", physics.AnimationTime());
+    ImGui::BeginDisabled(physics.IsCombatScene() ? physics.Combat().Fighter(0).State() != CombatState::Idle : physics.Attacking());
     if (ImGui::Button("Punch [P]")) physics.RequestPunch();
     ImGui::EndDisabled();
     if (physics.IsCombatScene()) ImGui::TextDisabled("Combat playback: fixed 1x");
@@ -70,7 +70,7 @@ void DrawDebugUI(PhysicsWorld& physics, DebugState& state, const char* adapter, 
     ImGui::End();
     if (physics.IsCombatScene()) {
         ImGui::SetNextWindowPos(ImVec2(390,20), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(620,230), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(620,250), ImGuiCond_FirstUseEver);
         ImGui::Begin("Combat | P1 white / P2 red", nullptr, ImGuiWindowFlags_NoCollapse);
         if (ImGui::BeginTable("Fighters", 2)) {
             for (std::size_t i = 0; i < 2; ++i) {
@@ -81,13 +81,16 @@ void DrawDebugUI(PhysicsWorld& physics, DebugState& state, const char* adapter, 
                 ImGui::ProgressBar(fighter.hp / 100.0f, ImVec2(-1,16), "");
                 ImGui::Text("%s | stun %d", StateName(fighter.State()), fighter.stunFrames);
                 if (fighter.attackFrame >= 0) {
-                    const auto& attack = CombatSystem::Punch;
+                    const auto& attack = CombatSystem::Data(fighter.attack);
                     const char* phase = fighter.attackFrame < attack.startupFrames ? "Startup"
                         : fighter.attackFrame < attack.startupFrames + attack.activeFrames ? "Active" : "Recovery";
-                    ImGui::Text("%s | frame %d / 60", phase, fighter.attackFrame + 1);
+                    ImGui::Text("%s %s | %d / %d", AttackName(fighter.attack), phase, fighter.attackFrame + 1,
+                        attack.startupFrames+attack.activeFrames+attack.recoveryFrames);
                 } else ImGui::TextDisabled("No attack");
                 ImGui::BeginDisabled(fighter.State() != CombatState::Idle);
                 if (ImGui::Button(i == 0 ? "Punch [P]" : "Punch [K]")) physics.RequestPunch(i);
+                ImGui::SameLine();
+                if (ImGui::Button(i == 0 ? "Kick [F]" : "Kick [L]")) physics.RequestAttack(i,AttackKind::Kick);
                 ImGui::EndDisabled();
                 ImGui::Checkbox(i == 0 ? "Auto guard [hold G]" : "Auto guard [hold O]", &state.guard[i]);
                 const auto& reaction = physics.HitReactions()[i];
@@ -99,6 +102,8 @@ void DrawDebugUI(PhysicsWorld& physics, DebugState& state, const char* adapter, 
             ImGui::EndTable();
         }
         ImGui::TextDisabled("Punch: 21 / 8 / 31 frames | Damage 12 (guard 3) | Stun 24 (guard 8)");
+        ImGui::TextDisabled("Kick: 30 / 10 / 38 frames | Damage 18 (guard 4) | Stun 30 (guard 12)");
+        ImGui::Text("Distance %.2f m | A/D, Left/Right: back/forward",physics.FighterDistance());
         ImGui::End();
         ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 260, ImGui::GetIO().DisplaySize.y - 225));
         ImGui::SetNextWindowSize(ImVec2(240,205), ImGuiCond_FirstUseEver);

@@ -192,7 +192,11 @@ def build(female):
                       ('Punch',[(0,0,0,0,0),(.10,-8,45,-4,2),(.23,15,95,-7,3),
                                 (.35,90,0,8,-5),(.40,90,0,8,-5),(.48,78,18,5,-2),
                                 (.60,25,70,-3,2),(.82,-3,5,1,-1),(1,0,0,0,0)]),
-                      ('Guard',[(0,0,0,0,0),(.15,20,75,0,0),(1,20,75,0,0)])]:
+                      ('Guard',[(0,0,0,0,0),(.15,20,75,0,0),(1,20,75,0,0)]),
+                      ('Walk',[(frame/60,0,0,0,0) for frame in range(49)]),
+                      ('Kick',[(0,0,0,0,0),(.15,-10,-20,0,4),(.32,65,-95,0,-5),
+                               (.50,100,-5,0,-8),(.57,100,-5,0,-8),(.72,65,-85,0,-4),
+                               (1.05,-5,-8,0,2),(1.3,0,0,0,0)])]:
         action = bpy.data.actions.new(name)
         action.use_fake_user = True
         rig.animation_data.action = action
@@ -206,6 +210,15 @@ def build(female):
                     bone.rotation_quaternion = Quaternion((0,0,1),math.radians(twist)) @ Quaternion((1,0,0),math.radians(lean))
                 elif bone.name == 'Head':
                     bone.rotation_quaternion = Quaternion((1,0,0),math.radians(-lean*.35))
+                if name == 'Walk' and bone.name in NAMES[7:]:
+                    wave=math.sin(time/.8*math.tau)*(1 if bone.name.startswith('Left') else -1)
+                    angle=18*wave if 'Upper' in bone.name else -24*max(0,wave)
+                    bone.rotation_quaternion=Quaternion((1,0,0),math.radians(angle))
+                if name == 'Kick':
+                    if bone.name in NAMES[3:7]:
+                        bone.rotation_quaternion=Quaternion((1,0,0),math.radians((20 if 'Upper' in bone.name else 65)*min(time/.15,1,(1.3-time)/.25)))
+                    if bone.name in NAMES[9:]:
+                        bone.rotation_quaternion=Quaternion((1,0,0),math.radians(shoulder if 'Upper' in bone.name else elbow))
                 bone.keyframe_insert('rotation_quaternion',frame=time*60,group=bone.name)
         # 物理パンチのフレーム契約に合わせて線形補間する。
         for layer in action.layers:
@@ -256,7 +269,7 @@ def build(female):
     bpy.ops.wm.save_as_mainfile(filepath=str(OUTPUT / (label+'.blend')))
     bpy.ops.render.render(write_still=True)
     return {'file':label, 'vertices':len(data.vertices),'triangles':len(data.polygons),
-            'bones':len(NAMES),'animations':['Idle','Punch','Guard']}
+            'bones':len(NAMES),'animations':['Idle','Punch','Guard','Walk','Kick']}
 
 results = [build(False),build(True)]
 (OUTPUT / 'manifest.json').write_text(json.dumps({'blender':bpy.app.version_string,'models':results},indent=2)+'\n',encoding='utf-8')

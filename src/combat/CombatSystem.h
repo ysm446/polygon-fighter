@@ -1,5 +1,6 @@
 #pragma once
 #include "animation/Pose.h"
+#include "character/Attack.h"
 #include <array>
 #include <cstddef>
 
@@ -23,6 +24,7 @@ struct FighterCombat {
     int stunFrames = 0;
     bool guardRequested = false;
     bool connected = false;
+    AttackKind attack = AttackKind::Punch;
     [[nodiscard]] CombatState State() const;
 };
 struct HitEvent {
@@ -31,6 +33,7 @@ struct HitEvent {
     bool guarded = false;
     std::array<float, 3> position{};
     std::array<float, 3> direction{};
+    AttackKind attack = AttackKind::Punch;
 };
 struct CombatFrame {
     std::array<HitEvent, 2> hits{};
@@ -40,13 +43,17 @@ struct CombatFrame {
 class CombatSystem {
 public:
     static constexpr AttackData Punch{};
-    bool RequestPunch(std::size_t fighter);
+    static constexpr AttackData Kick{30,10,38,18,30,4,12,.20f};
+    static constexpr const AttackData& Data(AttackKind kind) { return kind == AttackKind::Kick ? Kick : Punch; }
+    bool RequestAttack(std::size_t fighter, AttackKind kind);
+    bool RequestPunch(std::size_t fighter) { return RequestAttack(fighter,AttackKind::Punch); }
     void SetGuard(std::size_t fighter, bool held);
     void Reset();
     CombatFrame Step(const FighterPoses& poses);
     [[nodiscard]] const FighterCombat& Fighter(std::size_t fighter) const { return fighters_.at(fighter); }
     [[nodiscard]] bool HitboxActive(std::size_t fighter) const;
     [[nodiscard]] static Sphere PunchSphere(const std::array<BodyPose, HumanoidPartCount>& pose);
+    [[nodiscard]] static Sphere AttackSphere(const std::array<BodyPose, HumanoidPartCount>& pose, AttackKind kind);
     [[nodiscard]] static std::array<Sphere, HumanoidPartCount> HurtSpheres(const std::array<BodyPose, HumanoidPartCount>& pose);
     [[nodiscard]] static bool Intersects(const Sphere& a, const Sphere& b);
 private:

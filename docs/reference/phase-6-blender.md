@@ -1,9 +1,11 @@
 # Phase 6 — Blenderモデル・モーションと組み込み
 
 作成日時: 2026-09-05 15:28
-更新日時: 2026-09-05 15:28
+更新日時: 2026-09-05 16:10
 
 ## 制作物
+
+Phase 7の0.7.0で男女にWalkを追加した。さらに0.8.0で[Kick](phase-7-kick.md)を追加し、現在の.blend・GLBと再出力スクリプトは5クリップを扱う。[移動資料](phase-7-movement.md)を参照する。下記のPhase 6検証結果は0.6.0時点の記録。
 
 Blender 5.2.1 LTSで、参考画像と[男女の設定画](character-concepts.md)をもとにローポリモデルを制作した。開発版0.6.0では通常起動時にこのモデルを表示する。
 
@@ -70,7 +72,7 @@ $outputPath = 'path/to/fighter.glb'
 
 [cgltf](https://github.com/jkuhlmann/cgltf) v1.15、コミット `360db1a95480fe102ae9c69b27c5d101167ff5ba` を `third_party/cgltf/` に無改変で同梱した。ライセンスはMIT、原文を同じディレクトリに保存している。
 
-本ゲームのローダーは、単一メッシュ・単一Skin・11ジョイント・Idle / Punch / Guardの3クリップを持つ自己完結したGLBに限定する。POSITION / NORMAL / JOINTS_0 / WEIGHTS_0、三角形インデックス、単色マテリアルを使う。STEP / LINEARのアニメーションを読み込み、固定のTranslation / Scaleを検証する。画像テクスチャ・Morph・圧縮・任意のリグや動的なTranslation / Scaleは対象外。不正なGLBや異なる骨名・関節配置は明示的に拒否する。
+本ゲームのローダーは、単一メッシュ・単一Skin・11ジョイント・Idle / Punch / Guard / Walk / Kickの5クリップを持つ自己完結したGLBに限定する。POSITION / NORMAL / JOINTS_0 / WEIGHTS_0、三角形インデックス、単色マテリアルを使う。STEP / LINEARのアニメーションを読み込み、固定のTranslation / Scaleを検証する。画像テクスチャ・Morph・圧縮・任意のリグや動的なTranslation / Scaleは対象外。不正なGLBや異なる骨名・関節配置は明示的に拒否する。
 
 glTFの単色マテリアルは線形色として読み、現在のUNORM出力へモデルの色を変換する。照明は既存の簡易拡散照明。髪や衣服は骨への追従のみで、独立した物理演算は行わない。
 
@@ -84,4 +86,4 @@ glTFの単色マテリアルは線形色として読み、現在のUNORM出力�
 - Blenderの制作・プレビュー生成、保存済み.blendからの再出力とPython構文確認に成功した。
 - DX12で起動・リサイズ・正常終了に成功し、Debug Layerの警告・エラーは0件。予備動作・打点・反動の3枚のキャプチャでモデル表示を確認した。
 
-スモークテストの画像とログは `build/Debug/` または `build/Release/` に出力する。UIの全ボタンの手動クリック確認と今回のWARP再実行は未実施。自律バランス・移動・ラウンド制などの残作業は[進捗](../plan/progress.md)を参照する。
+スモークテストの画像とログは `build/Debug/` または `build/Release/` に出力する。UIの全ボタンの手動クリック確認と今回のWARP再実行は未実施。自律バランス・ラウンド制などの残作業は[進捗](../plan/progress.md)を参照する。

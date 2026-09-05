@@ -9,6 +9,7 @@ struct RenderScene {
     FighterPoses targets{};
     std::size_t fighterCount = 1;
     std::array<bool, 2> hitboxActive{};
+    std::array<AttackKind,2> attacks{};
     std::array<HitReaction, 2> reactions{};
 };
 }

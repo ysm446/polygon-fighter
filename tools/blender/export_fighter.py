@@ -15,7 +15,7 @@ if rig is None or rig.type != 'ARMATURE':
 meshes = [obj for obj in bpy.data.objects if obj.type == 'MESH' and obj.parent == rig]
 if len(meshes) != 1:
     raise RuntimeError('FighterRigの直下に1個のメッシュが必要です。')
-for name in ['Idle','Punch','Guard']:
+for name in ['Idle','Punch','Guard','Walk','Kick']:
     if bpy.data.actions.get(name) is None:
         raise RuntimeError(f'{name}アニメーションが見つかりません。')
 bpy.ops.object.select_all(action='DESELECT')

@@ -458,8 +458,10 @@ struct Renderer::Impl {
         commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         commands->IASetVertexBuffers(0, 1, &vertexView);
         commands->IASetIndexBuffer(&indexView);
+        const float centerZ=(scene.bodies[0][0].position[2]+scene.bodies[1][0].position[2])*.5f;
+        const float spacing=std::max(0.f,std::abs(scene.bodies[0][0].position[2]-scene.bodies[1][0].position[2])-1.05f);
         const XMMATRIX view = scene.fighterCount == 2
-            ? XMMatrixLookAtLH(XMVectorSet(6,3,1.5f,1), XMVectorSet(.9f,1.1f,-.5f,1), XMVectorSet(0,1,0,0))
+            ? XMMatrixLookAtLH(XMVectorSet(6+spacing*.65f,3+spacing*.2f,centerZ+2,1), XMVectorSet(.9f,1.4f,centerZ,1), XMVectorSet(0,1,0,0))
             : XMMatrixLookAtLH(XMVectorSet(4,3.2f,-6,1), XMVectorSet(0,1.1f,0,1), XMVectorSet(0,1,0,0));
         const XMMATRIX projection = XMMatrixPerspectiveFovLH(XMConvertToRadians(48), static_cast<float>(width) / height, 0.1f, 100);
         ObjectData data{};
@@ -553,7 +555,7 @@ struct Renderer::Impl {
         for (std::size_t fighter = 0; fighter < scene.fighterCount; ++fighter) {
             if (debug.hurtboxes)
                 for (const auto& hurt : CombatSystem::HurtSpheres(scene.bodies[fighter])) sphere(hurt, {.4f,.7f,1,1});
-            if (debug.hitboxes && scene.hitboxActive[fighter]) sphere(CombatSystem::PunchSphere(scene.bodies[fighter]), {1,.3f,.1f,1});
+            if (debug.hitboxes && scene.hitboxActive[fighter]) sphere(CombatSystem::AttackSphere(scene.bodies[fighter],scene.attacks[fighter]), {1,.3f,.1f,1});
         }
         ID3D12DescriptorHeap* heaps[] = {srvHeap.Get()};
         commands->SetPipelineState(debugPipeline.Get());

@@ -24,8 +24,13 @@ public:
     void ResetHumanoid();
     void PushHumanoid();
     void SetJointTuning(const JointTuning& tuning);
-    bool RequestPunch(std::size_t fighter = 0);
+    bool RequestAttack(std::size_t fighter, AttackKind kind);
+    bool RequestPunch(std::size_t fighter = 0) { return RequestAttack(fighter,AttackKind::Punch); }
+    [[nodiscard]] AttackKind CurrentAttack() const;
     void SetGuard(std::size_t fighter, bool held);
+    void SetMove(std::size_t fighter, float forward);
+    [[nodiscard]] float FighterSpeed(std::size_t fighter) const;
+    [[nodiscard]] float FighterDistance() const;
     void ResetMatch();
     [[nodiscard]] bool IsCombatScene() const;
     [[nodiscard]] const CombatSystem& Combat() const;
@@ -34,7 +39,7 @@ public:
     [[nodiscard]] const std::array<HitReaction, 2>& HitReactions() const;
     void SetPlaybackSpeed(float speed);
     void SetAnimations(std::size_t fighter, std::shared_ptr<const CharacterAnimations> clips);
-    [[nodiscard]] bool Punching() const;
+    [[nodiscard]] bool Attacking() const;
     [[nodiscard]] double AnimationTime() const;
     [[nodiscard]] std::array<BodyPose, HumanoidPartCount> TargetPoses(std::size_t fighter = 0) const;
     [[nodiscard]] std::array<BodyPose, HumanoidPartCount> HumanoidPoses(std::size_t fighter = 0) const;

@@ -31,7 +31,7 @@ float RunPunch(pf::PhysicsWorld& world, bool powered) {
         reach = std::max(reach, -actual[6].position[2]);
         targetReach = std::max(targetReach, -world.TargetPoses()[6].position[2]);
     }
-    Require(!world.Punching(), "Punch must return to Idle after 60 steps");
+    Require(!world.Attacking(), "Punch must return to Idle after 60 steps");
     Require(targetReach > .55f, "Target forearm must extend forward");
     return reach;
 }
@@ -44,9 +44,9 @@ int main() {
         Require(player.RequestPunch(), "Punch request failed");
         player.SetSpeed(2);
         player.Advance(.25);
-        Require(player.Punching(), "Double-speed punch ended too soon");
+        Require(player.Attacking(), "Double-speed punch ended too soon");
         player.Advance(.25);
-        Require(!player.Punching(), "Double-speed punch must finish at 0.5 seconds");
+        Require(!player.Attacking(), "Double-speed punch must finish at 0.5 seconds");
         const auto midpoint = pf::AnimationPlayer::PunchClip().Sample(.25);
         Near(midpoint[5].rotation[0], std::sin(55.0f * 3.14159265f / 360), .0001f, "Rotation interpolation is incorrect");
         pf::Pose a{}, b{};
@@ -71,7 +71,7 @@ int main() {
         world.RequestPunch();
         for (int i = 0; i < 20; ++i) world.Step();
         world.ResetHumanoid();
-        Require(!world.Punching(), "Reset must cancel punch");
+        Require(!world.Attacking(), "Reset must cancel punch");
         Near(world.TargetPoses()[6].position[2], 0, .0001f, "Reset must clear punch target");
 
         float positions[3]{};

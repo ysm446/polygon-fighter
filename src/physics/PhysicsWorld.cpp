@@ -66,6 +66,7 @@ struct PhysicsWorld::Impl {
     HitReactionTuning hitTuning;
     std::array<HitReaction, 2> reactions{};
     JointTuning tuning;
+    std::array<float,2> moveInput{}, moveVelocity{};
     JPH::BodyID ground;
     JPH::BodyID box;
 
@@ -91,8 +92,8 @@ struct PhysicsWorld::Impl {
         boxSettings.mMassPropertiesOverride.mMass = 10.0f;
         box = bodies.CreateAndAddBody(boxSettings, JPH::EActivation::Activate);
         if (ground.IsInvalid() || box.IsInvalid()) throw std::runtime_error("Could not create physics bodies.");
-        rig = std::make_unique<PhysicsRig>(system);
-        if (combatScene) opponent = std::make_unique<PhysicsRig>(system, JPH::RVec3(0,0,-1.05f), JPH::JPH_PI, 2);
+        rig = std::make_unique<PhysicsRig>(system,JPH::RVec3::sZero(),0.f,1,combatScene);
+        if (combatScene) opponent = std::make_unique<PhysicsRig>(system, JPH::RVec3(0,0,-1.05f), JPH::JPH_PI, 2,true);
         system.OptimizeBroadPhase();
     }
     ~Impl() {
@@ -112,6 +113,27 @@ PhysicsWorld::~PhysicsWorld() = default;
 void PhysicsWorld::Step() {
     for (auto& reaction : impl_->reactions) if (reaction.visibleFrames > 0) --reaction.visibleFrames;
     if (impl_->opponent) {
+        constexpr float step=static_cast<float>(FixedStep);
+        std::array<float,2> root{impl_->rig->RootZ(),impl_->opponent->RootZ()}, delta{};
+        for (std::size_t i=0;i<2;++i) {
+            const bool allowed=impl_->combat.Fighter(i).State()==CombatState::Idle;
+            const float input=allowed ? impl_->moveInput[i] : 0;
+            const float desired=input*(input>=0 ? .85f : .65f)*(i==0 ? -1.f : 1.f);
+            auto& velocity=impl_->moveVelocity[i];
+            velocity=allowed ? velocity+std::clamp(desired-velocity,-6.f*step,6.f*step) : 0;
+            delta[i]=std::clamp(root[i]+velocity*step,-3.f,2.f)-root[i];
+        }
+        // 接近した側だけを止める。同時入力でも処理順で相手を押し出さない。
+        const float overlap=.8f-((root[0]+delta[0])-(root[1]+delta[1]));
+        const float closing0=std::max(0.f,-delta[0]), closing1=std::max(0.f,delta[1]);
+        if (overlap>0 && closing0+closing1>0) {
+            delta[0]+=overlap*closing0/(closing0+closing1);
+            delta[1]-=overlap*closing1/(closing0+closing1);
+        }
+        for (std::size_t i=0;i<2;++i) {
+            impl_->moveVelocity[i]=delta[i]/step;
+            (i==0 ? impl_->rig : impl_->opponent)->MoveRoot(root[i]+delta[i]);
+        }
         impl_->rig->SetGuard(impl_->combat.Fighter(0).guardRequested && impl_->combat.Fighter(0).hp > 0);
         impl_->opponent->SetGuard(impl_->combat.Fighter(1).guardRequested && impl_->combat.Fighter(1).hp > 0);
         impl_->opponent->Animate(FixedStep);
@@ -185,10 +207,10 @@ std::array<BodyPose, HumanoidPartCount> PhysicsWorld::HumanoidPoses(std::size_t 
     return (fighter == 0 ? impl_->rig : impl_->opponent)->Poses();
 }
 float PhysicsWorld::HumanoidPoseError() const { return impl_->rig->PoseError(); }
-bool PhysicsWorld::RequestPunch(std::size_t fighter) {
+bool PhysicsWorld::RequestAttack(std::size_t fighter, AttackKind kind) {
     if (fighter > 1 || (fighter == 1 && !IsCombatScene())) return false;
-    if (IsCombatScene() && !impl_->combat.RequestPunch(fighter)) return false;
-    return (fighter == 0 ? impl_->rig : impl_->opponent)->RequestPunch();
+    if (IsCombatScene() && !impl_->combat.RequestAttack(fighter,kind)) return false;
+    return (fighter == 0 ? impl_->rig : impl_->opponent)->RequestAttack(kind);
 }
 void PhysicsWorld::SetPlaybackSpeed(float speed) { impl_->rig->SetPlaybackSpeed(IsCombatScene() ? 1.0f : speed); }
 void PhysicsWorld::SetAnimations(std::size_t fighter, std::shared_ptr<const CharacterAnimations> clips) {
@@ -196,7 +218,8 @@ void PhysicsWorld::SetAnimations(std::size_t fighter, std::shared_ptr<const Char
     (fighter==0 ? impl_->rig : impl_->opponent)->SetClips(std::move(clips));
     ResetMatch();
 }
-bool PhysicsWorld::Punching() const { return impl_->rig->Punching(); }
+AttackKind PhysicsWorld::CurrentAttack() const { return impl_->rig->CurrentAttack(); }
+bool PhysicsWorld::Attacking() const { return impl_->rig->Attacking(); }
 double PhysicsWorld::AnimationTime() const { return impl_->rig->AnimationTime(); }
 std::array<BodyPose, HumanoidPartCount> PhysicsWorld::TargetPoses(std::size_t fighter) const {
     if (fighter > 1 || (fighter == 1 && !IsCombatScene())) throw std::out_of_range("Fighter does not exist.");
@@ -207,6 +230,7 @@ void PhysicsWorld::ResetMatch() {
     impl_->combat.Reset();
     impl_->lastCombatFrame = {};
     impl_->reactions = {};
+    impl_->moveInput = {}; impl_->moveVelocity = {};
     impl_->rig->Reset();
     if (impl_->opponent) impl_->opponent->Reset();
     SetJointTuning(impl_->tuning);
@@ -214,6 +238,13 @@ void PhysicsWorld::ResetMatch() {
 bool PhysicsWorld::IsCombatScene() const { return impl_->opponent != nullptr; }
 const CombatSystem& PhysicsWorld::Combat() const { return impl_->combat; }
 const CombatFrame& PhysicsWorld::LastCombatFrame() const { return impl_->lastCombatFrame; }
+void PhysicsWorld::SetMove(std::size_t fighter,float forward) {
+    if (fighter>1 || !IsCombatScene()) throw std::out_of_range("Movement requires a duel fighter.");
+    if (!std::isfinite(forward)) throw std::invalid_argument("Movement input must be finite.");
+    impl_->moveInput[fighter]=std::clamp(forward,-1.f,1.f);
+}
+float PhysicsWorld::FighterSpeed(std::size_t fighter) const { return impl_->moveVelocity.at(fighter)*(fighter==0 ? -1.f : 1.f); }
+float PhysicsWorld::FighterDistance() const { return IsCombatScene() ? impl_->rig->RootZ()-impl_->opponent->RootZ() : 0; }
 void PhysicsWorld::SetHitReactionTuning(const HitReactionTuning& tuning) {
     if (!std::isfinite(tuning.impulse) || tuning.impulse < 0 || tuning.impulse > 40
         || !std::isfinite(tuning.guardMultiplier) || tuning.guardMultiplier < 0 || tuning.guardMultiplier > 1)
