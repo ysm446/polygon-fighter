@@ -1,0 +1,27 @@
+{
+  "blender": "5.2.1 LTS",
+  "models": [
+    {
+      "file": "male-fighter",
+      "vertices": 658,
+      "triangles": 1109,
+      "bones": 11,
+      "animations": [
+        "Idle",
+        "Punch",
+        "Guard"
+      ]
+    },
+    {
+      "file": "female-fighter",
+      "vertices": 708,
+      "triangles": 1209,
+      "bones": 11,
+      "animations": [
+        "Idle",
+        "Punch",
+        "Guard"
+      ]
+    }
+  ]
+}
